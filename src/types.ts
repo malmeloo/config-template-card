@@ -4,6 +4,7 @@ export interface ConfigTemplateConfig {
   type: string;
   entities: string[];
   variables?: string[] | { [key: string]: string };
+  async?: boolean;
   card?: LovelaceCardConfig;
   row?: EntitiesCardEntityConfig;
   element?: LovelaceElementConfigBase;

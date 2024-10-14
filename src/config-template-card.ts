@@ -1,4 +1,6 @@
-import { LitElement, html, customElement, property, TemplateResult, PropertyValues, state } from 'lit-element';
+import { LitElement, html, TemplateResult, PropertyValues } from 'lit';
+import { customElement, property, state } from 'lit/decorators.js';
+import { until } from 'lit/directives/until.js';
 import deepClone from 'deep-clone-simple';
 import { computeCardSize, HomeAssistant, LovelaceCard } from 'custom-card-helpers';
 
@@ -46,33 +48,37 @@ export class ConfigTemplateCard extends LitElement {
       throw new Error('No entities defined');
     }
 
+    if (config.async !== undefined && !(typeof config.async === 'boolean')) {
+      throw new Error('Config value "async" is not a boolean');
+    }
+
     this._config = config;
 
     this.loadCardHelpers();
   }
 
   private getLovelacePanel() {
-    const ha = document.querySelector("home-assistant");
+    const ha = document.querySelector('home-assistant');
 
     if (ha && ha.shadowRoot) {
-      const haMain = ha.shadowRoot.querySelector("home-assistant-main");
+      const haMain = ha.shadowRoot.querySelector('home-assistant-main');
 
       if (haMain && haMain.shadowRoot) {
         return haMain.shadowRoot.querySelector('ha-panel-lovelace');
       }
     }
 
-    return null
+    return null;
   }
 
   private getLovelaceConfig() {
     const panel = this.getLovelacePanel() as any;
 
     if (panel && panel.lovelace && panel.lovelace.config && panel.lovelace.config.config_template_card_vars) {
-      return panel.lovelace.config.config_template_card_vars
+      return panel.lovelace.config.config_template_card_vars;
     }
 
-    return {}
+    return {};
   }
 
   protected shouldUpdate(changedProps: PropertyValues): boolean {
@@ -89,7 +95,7 @@ export class ConfigTemplateCard extends LitElement {
 
       if (oldHass) {
         for (const entity of this._config.entities) {
-          const evaluatedTemplate = this._evaluateTemplate(entity);
+          const evaluatedTemplate = this._evaluateTemplate(entity, false);
           if (Boolean(this.hass && oldHass.states[evaluatedTemplate] !== this.hass.states[evaluatedTemplate])) {
             return true;
           }
@@ -114,6 +120,10 @@ export class ConfigTemplateCard extends LitElement {
   }
 
   protected render(): TemplateResult | void {
+    return html`${until(this.getCardElement())}`;
+  }
+
+  private async getCardElement(): Promise<TemplateResult> {
     if (
       !this._config ||
       !this.hass ||
@@ -126,41 +136,46 @@ export class ConfigTemplateCard extends LitElement {
     let config = this._config.card
       ? deepClone(this._config.card)
       : this._config.row
-      ? deepClone(this._config.row)
-      : deepClone(this._config.element);
+        ? deepClone(this._config.row)
+        : deepClone(this._config.element);
 
     let style = this._config.style ? deepClone(this._config.style) : {};
 
-    config = this._evaluateConfig(config);
-    if (style) {
-      style = this._evaluateConfig(style);
+    if (this._config.async ?? false) {
+      // Eval in async mode
+      config = await this._evaluateConfigAsync(config);
+      if (style) {
+        style = await this._evaluateConfigAsync(style);
+      }
+    } else {
+      // Eval in non-async (default) mode
+      config = this._evaluateConfig(config);
+      if (style) {
+        style = this._evaluateConfig(style);
+      }
     }
 
     const element = this._config.card
       ? this._helpers.createCardElement(config)
       : this._config.row
-      ? this._helpers.createRowElement(config)
-      : this._helpers.createHuiElement(config);
+        ? this._helpers.createRowElement(config)
+        : this._helpers.createHuiElement(config);
     element.hass = this.hass;
 
     if (this._config.element) {
       if (style) {
-        Object.keys(style).forEach(prop => {
+        Object.keys(style).forEach((prop) => {
           this.style.setProperty(prop, style[prop]);
         });
       }
       if (config.style) {
-        Object.keys(config.style).forEach(prop => {
+        Object.keys(config.style).forEach((prop) => {
           element.style.setProperty(prop, config.style[prop]);
         });
       }
     }
 
-    return html`
-      <div id="card">
-        ${element}
-      </div>
-    `;
+    return html` <div id="card">${element}</div> `;
   }
 
   private _initialize(): void {
@@ -176,7 +191,7 @@ export class ConfigTemplateCard extends LitElement {
 
   /* eslint-disable @typescript-eslint/no-explicit-any */
   private _evaluateConfig(config: any): any {
-    Object.entries(config).forEach(entry => {
+    Object.entries(config).forEach((entry) => {
       const key = entry[0];
       const value = entry[1];
 
@@ -186,10 +201,27 @@ export class ConfigTemplateCard extends LitElement {
         } else if (typeof value === 'object') {
           config[key] = this._evaluateConfig(value);
         } else if (typeof value === 'string' && value.includes('${')) {
-          config[key] = this._evaluateTemplate(value);
+          config[key] = this._evaluateTemplate(value, false);
         }
       }
     });
+
+    return config;
+  }
+
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  private async _evaluateConfigAsync(config: any): Promise<any> {
+    for (const [key, value] of Object.entries(config)) {
+      if (value !== null) {
+        if (value instanceof Array) {
+          config[key] = await this._evaluateArrayAsync(value);
+        } else if (typeof value === 'object') {
+          config[key] = await this._evaluateConfigAsync(value);
+        } else if (typeof value === 'string' && value.includes('${')) {
+          config[key] = await this._evaluateTemplate(value, true);
+        }
+      }
+    }
 
     return config;
   }
@@ -203,15 +235,36 @@ export class ConfigTemplateCard extends LitElement {
       } else if (typeof value === 'object') {
         array[i] = this._evaluateConfig(value);
       } else if (typeof value === 'string' && value.includes('${')) {
-        array[i] = this._evaluateTemplate(value);
+        array[i] = this._evaluateTemplate(value, false);
       }
     }
 
     return array;
   }
 
-  private _evaluateTemplate(template: string): string {
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  private async _evaluateArrayAsync(array: any): Promise<any> {
+    for (let i = 0; i < array.length; ++i) {
+      const value = array[i];
+      if (value instanceof Array) {
+        array[i] = await this._evaluateArrayAsync(value);
+      } else if (typeof value === 'object') {
+        array[i] = await this._evaluateConfigAsync(value);
+      } else if (typeof value === 'string' && value.includes('${')) {
+        array[i] = await this._evaluateTemplate(value, true);
+      }
+    }
+
+    return array;
+  }
+
+  private _evaluateTemplate(template: string, useAsync: false): string;
+  private _evaluateTemplate(template: string, useAsync: true): Promise<string>;
+  private _evaluateTemplate(template: string, useAsync: boolean) {
     if (!template.includes('${')) {
+      if (useAsync) {
+        return new Promise((resolve) => resolve(template));
+      }
       return template;
     }
 
@@ -253,6 +306,10 @@ export class ConfigTemplateCard extends LitElement {
       varDef = varDef + `var ${varName} = vars['${varName}'];\n`;
     }
 
-    return eval(varDef + template.substring(2, template.length - 1));
+    let evalBody = varDef + template.substring(2, template.length - 1);
+    if (useAsync) {
+      evalBody = `(async () => { ${evalBody} })()`;
+    }
+    return eval(evalBody) as string | Promise<string>;
   }
 }
