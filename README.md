@@ -39,15 +39,16 @@ resources:
 
 ## Options
 
-| Name      | Type   | Requirement  | Description                                                                                                      |
-| --------- | ------ | ------------ | ---------------------------------------------------------------------------------------------------------------- |
-| type      | string | **Required** | `custom:config-template-card`                                                                                    |
-| entities  | list   | **Required** | List of entity strings that should be watched for updates. Templates can be used here                            |
-| variables | list   | **Optional** | List of variables, which can be templates, that can be used in your `config` and indexed using `vars` or by name |
-| card      | object | **Optional** | Card configuration. (A card, row, or element configuaration must be provided)                                    |
-| row       | object | **Optional** | Row configuration. (A card, row, or element configuaration must be provided)                                     |
-| element   | object | **Optional** | Element configuration. (A card, row, or element configuaration must be provided)                                 |
-| style     | object | **Optional** | Style configuration.                                                                                             |
+| Name      | Type    | Requirement  | Description                                                                                                      |
+| --------- | ------- | ------------ | ---------------------------------------------------------------------------------------------------------------- |
+| type      | string  | **Required** | `custom:config-template-card`                                                                                    |
+| entities  | list    | **Required** | List of entity strings that should be watched for updates. Templates can be used here                            |
+| variables | list    | **Optional** | List of variables, which can be templates, that can be used in your `config` and indexed using `vars` or by name |
+| async     | boolean | **Optional** | Whether to use asynchronous evaluation. See [async](#asynchronous-mode) below.                                   |
+| card      | object  | **Optional** | Card configuration. (A card, row, or element configuaration must be provided)                                    |
+| row       | object  | **Optional** | Row configuration. (A card, row, or element configuaration must be provided)                                     |
+| element   | object  | **Optional** | Element configuration. (A card, row, or element configuaration must be provided)                                 |
+| style     | object  | **Optional** | Style configuration.                                                                                             |
 
 ### Available variables for templating
 
@@ -57,6 +58,18 @@ resources:
 | `states`    | The [states](https://developers.home-assistant.io/docs/frontend/data/#hassstates) object                                                                                                                                                                                                                                                                                                              |
 | `user`      | The [user](https://developers.home-assistant.io/docs/frontend/data/#hassuser) object                                                                                                                                                                                                                                                                                                                  |
 | `vars`      | Defined by `variables` configuration and accessible in your templates to help clean them up. If `variables` in the configuration is a yaml list, then `vars` is an array starting at the 0th index as your firstly defined variable. If `variables` is an object in the configuration, then `vars` is a string-indexed map and you can also access the variables by name without using `vars` at all. |
+
+### Asynchronous mode
+
+Setting the `async` option to `true` will enable asynchronous evaluation in your template. This allows you to `await` async functions or promises.
+
+There are a two things to note here:
+
+- In async mode, your template **must** explicitly `return` a value. Implicit completion value templates will simply eval to `undefined`.
+  - Example: instead of using `${1 + 1}`, use `${return 1 + 1}` instead.
+- Async evaluation does **not** work in the entities list
+- The card may flicker while rendering if your template takes too long to evaluate.
+
 ## Examples
 
 ```yaml
@@ -112,11 +125,12 @@ elements:
       type: icon
       icon: "${vars[0] === 'on' ? 'mdi:home' : 'mdi:circle'}"
       style:
-        '--paper-item-icon-color': '${ states[''sensor.light_icon_color''].state }'
+        '--paper-item-icon-color': "${ states['sensor.light_icon_color'].state }"
     style:
       top: 47%
       left: 75%
 ```
+
 The `style` object on the element configuration is applied to the element itself, the `style` object on the `config-template-card` is applied to the surrounding card, both can contain templated values. For example, in order to place the card properly, the `top` and `left` attributes must always be configured on the `config-template-card`.
 
 ### Entities card example
@@ -160,7 +174,7 @@ type: 'custom:config-template-card'
     entities:
       - entity: climate.ecobee
         name: '${ setTempMessage(currentTemp) }'
-````
+```
 
 ## Dashboard wide variables
 
