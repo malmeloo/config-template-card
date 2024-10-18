@@ -15,8 +15,8 @@ jobs:
       - name: Build the file
         run: |
           cd /home/runner/work/config-template-card/config-template-card
-          npm install
-          npm run build
+          yarn install
+          yarn run build
 
       # Upload build file to the releas as an asset.
       - name: Upload zip to release
